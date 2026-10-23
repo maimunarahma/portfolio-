@@ -26,6 +26,7 @@ export function Contact() {
   const [form, setForm] = useState<FormState>({ name: "", email: "", subject: "", message: "" });
   const [errors, setErrors] = useState<Errors>({});
   const [status, setStatus] = useState("");
+  const [sending, setSending] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const update = (k: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -41,17 +42,37 @@ export function Contact() {
     setTimeout(() => setCopied(false), 1800);
   };
 
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
     const er: Errors = {};
     if (!form.name.trim()) er.name = "Please enter your name.";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) er.email = "Enter a valid email address.";
+    if (!form.subject.trim()) er.subject = "Please enter a subject.";
     if (form.message.trim().length < 10) er.message = "Message should be at least 10 characters.";
     setErrors(er);
-    if (Object.keys(er).length) return setStatus("");
-    const body = encodeURIComponent(`${form.message}\n\n— ${form.name} (${form.email})`);
-    window.location.href = `mailto:${site.email}?subject=${encodeURIComponent(form.subject || "Portfolio enquiry")}&body=${body}`;
-    setStatus("OK: opening your mail app with the message pre-filled.");
+    if (Object.keys(er).length) {
+      setStatus("");
+      return;
+    }
+
+    setSending(true);
+    setStatus("");
+    try {
+      const response = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error || "The message could not be sent.");
+      setStatus("Message sent. Thanks for reaching out!");
+      setForm({ name: "", email: "", subject: "", message: "" });
+      window.setTimeout(() => window.location.assign("/?contact=success#contact"), 900);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "The message could not be sent.");
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -149,16 +170,17 @@ export function Contact() {
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="subject">SUBJECT</Label>
                     <Input id="subject" placeholder="Internship, project, collaboration…" value={form.subject} onChange={update("subject")} />
+                    {errors.subject && <span className="font-mono text-[11px] text-destructive">{errors.subject}</span>}
                   </div>
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="message">MESSAGE</Label>
                     <Textarea id="message" rows={5} placeholder="Tell me a little about it" value={form.message} onChange={update("message")} />
                     {errors.message && <span className="font-mono text-[11px] text-destructive">{errors.message}</span>}
                   </div>
-                  <Button type="submit" size="lg" className="hover:translate-y-0">
-                    Send message <ArrowRight />
+                  <Button type="submit" size="lg" disabled={sending} className="hover:translate-y-0">
+                    {sending ? "Sending..." : "Send message"} {!sending && <ArrowRight />}
                   </Button>
-                  <span role="status" className="font-mono text-xs leading-normal text-primary">
+                  <span role="status" className={`font-mono text-xs leading-normal ${status.startsWith("Message sent") ? "text-primary" : "text-destructive"}`}>
                     {status}
                   </span>
                 </form>
